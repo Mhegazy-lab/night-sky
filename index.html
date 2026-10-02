@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<meta name="application-name" content="Night Sky" />
+<meta name="description" content="What's in the sky right now over Cairo — bright stars and the Moon, with live directions." />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<title>Night Sky</title>
+<style>
+  :root{
+    --bg:#050310; --ink:#ede9fe; --muted:#8b7fb8;
+    --vio:#a78bfa; --gold:#fbbf24;
+    --card:#0e0a26; --line:rgba(167,139,250,.28);
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%; overflow:hidden}
+  body{
+    background:radial-gradient(130% 90% at 50% 0%, #1a1040 0%, var(--bg) 65%);
+    color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; align-items:center; justify-content:center; min-height:100dvh;
+    -webkit-font-smoothing:antialiased; -webkit-user-select:none; user-select:none;
+  }
+  .app{width:min(480px,100vw - 24px); height:100dvh; max-height:780px; display:flex; flex-direction:column; padding:16px 14px 12px}
+  header{flex:0 0 auto; text-align:center}
+  h1{font-size:19px; letter-spacing:.04em; color:var(--vio)}
+  .dateline{color:var(--muted); font-size:12px; margin-top:3px}
+  .hero{flex:0 0 auto; display:flex; gap:10px; margin:12px 0}
+  .panel{
+    flex:1; border:1px solid var(--line); border-radius:18px; padding:14px 10px; text-align:center;
+    background:linear-gradient(160deg, rgba(167,139,250,.12), rgba(167,139,250,.03));
+  }
+  .panel .big{font-size:30px; font-weight:900; color:var(--vio)}
+  .panel .moon{font-size:34px}
+  .panel .lab{font-size:11px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-top:2px}
+  .panel .sub{font-size:13px; color:var(--ink); margin-top:4px; font-variant-numeric:tabular-nums}
+  .listhead{flex:0 0 auto; font-size:12px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin:2px 0 6px}
+  .list{flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:7px}
+  .row{
+    flex:1 1 0; min-height:0; display:flex; align-items:center; justify-content:space-between;
+    border:1px solid rgba(139,127,184,.22); border-radius:13px; background:var(--card); padding:0 14px;
+  }
+  .row .nm{font-size:16px; font-weight:800}
+  .row .mg{font-size:12px; color:var(--gold); margin-left:8px; font-variant-numeric:tabular-nums}
+  .row .pos{font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums}
+  .row .pos b{color:var(--ink)}
+  .empty{flex:1 1 auto; display:flex; align-items:center; justify-content:center; text-align:center;
+    color:var(--muted); font-size:14px; line-height:1.7; border:1px dashed rgba(139,127,184,.35); border-radius:14px; padding:16px}
+  .foot{flex:0 0 auto; text-align:center; color:var(--muted); font-size:10.5px; margin-top:10px; line-height:1.5}
+  button:focus-visible{outline:3px solid var(--vio); outline-offset:2px}
+</style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>🔭 Night Sky</h1>
+      <div class="dateline" id="dateline">Cairo, Egypt</div>
+    </header>
+    <div class="hero">
+      <div class="panel">
+        <div class="big" id="skyState">–</div>
+        <div class="lab">Sky</div>
+        <div class="sub" id="skySub"></div>
+      </div>
+      <div class="panel">
+        <div class="moon" id="moonEmoji">🌙</div>
+        <div class="lab">Moon</div>
+        <div class="sub" id="moonSub"></div>
+      </div>
+    </div>
+    <div class="listhead" id="listHead">Up right now</div>
+    <div class="list" id="list"></div>
+    <div class="foot">Positions computed live on your device<br/>22 brightest stars + Moon · Cairo 30.04°N 31.24°E</div>
+  </main>
+
+<script>
+(function(){
+"use strict";
+var D2R = Math.PI/180, R2D = 180/Math.PI;
+var LAT = 30.0444, LON = 31.2357; // Cairo
+function norm360(a){ a %= 360; return a < 0 ? a + 360 : a; }
+function $(id){ return document.getElementById(id); }
+
+/* 22 brightest stars, J2000: [name, RA hours, Dec degrees, magnitude] */
+var STARS = [
+  ["Sirius",     6.7525, -16.7161, -1.46],
+  ["Canopus",    6.3992, -52.6957, -0.74],
+  ["Arcturus",  14.2610,  19.1824, -0.05],
+  ["Vega",      18.6156,  38.7837,  0.03],
+  ["Capella",    5.2782,  45.9980,  0.08],
+  ["Rigel",      5.2423,  -8.2016,  0.13],
+  ["Procyon",    7.6550,   5.2250,  0.34],
+  ["Betelgeuse", 5.9194,   7.4070,  0.42],
+  ["Altair",    19.8464,   8.8683,  0.76],
+  ["Aldebaran",  4.5987,  16.5093,  0.86],
+  ["Antares",   16.4901, -26.4320,  0.91],
+  ["Spica",     13.4199, -11.1613,  0.97],
+  ["Pollux",     7.7553,  28.0262,  1.14],
+  ["Deneb",     20.6905,  45.2803,  1.25],
+  ["Regulus",   10.1395,  11.9672,  1.35],
+  ["Castor",     7.5766,  31.8883,  1.58],
+  ["Bellatrix",  5.4188,   6.3506,  1.64],
+  ["Alnilam",    5.6036,  -1.2019,  1.69],
+  ["Alnitak",    5.6793,  -1.9426,  1.77],
+  ["Dubhe",     11.0621,  61.7510,  1.79],
+  ["Polaris",    2.5303,  89.2641,  1.98],
+  ["Mintaka",    5.5334,  -0.2991,  2.23]
+];
+
+function lstDeg(date){
+  var JD = date.getTime()/86400000 + 2440587.5;
+  var T = (JD - 2451545.0)/36525;
+  var gmst = 280.46061837 + 360.98564736629*(JD - 2451545.0) + 0.000387933*T*T - T*T*T/38710000;
+  return norm360(gmst + LON);
+}
+function altaz(raH, decD, date){
+  var H = lstDeg(date) - raH*15;
+  H = ((H + 180) % 360 + 360) % 360 - 180;
+  var Hr = H*D2R, decr = decD*D2R, latr = LAT*D2R;
+  var s = Math.sin(decr)*Math.sin(latr) + Math.cos(decr)*Math.cos(latr)*Math.cos(Hr);
+  var alt = Math.asin(Math.max(-1, Math.min(1, s)))*R2D;
+  var y = Math.sin(Hr);
+  var x = Math.cos(Hr)*Math.sin(latr) - Math.tan(decr)*Math.cos(latr);
+  var az = norm360(Math.atan2(y, x)*R2D + 180); // from north
+  return {alt: alt, az: az};
+}
+function sunRaDec(date){
+  var JD = date.getTime()/86400000 + 2440587.5;
+  var d = JD - 2451543.5;
+  var w = norm360(282.9404 + 4.70935e-5*d);
+  var M = norm360(356.0470 + 0.9856002585*d);
+  var e = 0.016709 - 1.151e-9*d;
+  var E = M + R2D*e*Math.sin(M*D2R)*(1 + e*Math.cos(M*D2R));
+  var Er = E*D2R;
+  var x = Math.cos(Er) - e, y = Math.sqrt(1-e*e)*Math.sin(Er);
+  var lon = norm360(Math.atan2(y, x)*R2D + w);
+  var ecl = (23.4393 - 3.563e-7*d)*D2R, lonr = lon*D2R;
+  var xe = Math.cos(lonr), ye = Math.sin(lonr);
+  var xeq = xe, yeq = ye*Math.cos(ecl), zeq = ye*Math.sin(ecl);
+  return {
+    ra: norm360(Math.atan2(yeq, xeq)*R2D)/15,
+    dec: Math.atan2(zeq, Math.sqrt(xeq*xeq + yeq*yeq))*R2D
+  };
+}
+function moonRaDec(date){
+  var JD = date.getTime()/86400000 + 2440587.5;
+  var d = JD - 2451543.5;
+  var N = norm360(125.1228 - 0.0529538083*d);
+  var i = 5.1454;
+  var w = norm360(318.0634 + 0.1643573223*d);
+  var a = 60.2666, e = 0.054900;
+  var M = norm360(115.3654 + 13.0649929509*d);
+  var E = M + R2D*e*Math.sin(M*D2R)*(1 + e*Math.cos(M*D2R));
+  for(var k = 0; k < 3; k++)
+    E = E - (E - R2D*e*Math.sin(E*D2R) - M)/(1 - e*Math.cos(E*D2R));
+  var Er = E*D2R;
+  var x = a*(Math.cos(Er) - e), y = a*Math.sqrt(1-e*e)*Math.sin(Er);
+  var v = Math.atan2(y, x)*R2D, r = Math.sqrt(x*x + y*y);
+  var vw = (v + w)*D2R, Nr = N*D2R, ir = i*D2R;
+  var xh = r*(Math.cos(Nr)*Math.cos(vw) - Math.sin(Nr)*Math.sin(vw)*Math.cos(ir));
+  var yh = r*(Math.sin(Nr)*Math.cos(vw) + Math.cos(Nr)*Math.sin(vw)*Math.cos(ir));
+  var zh = r*(Math.sin(vw)*Math.sin(ir));
+  var lon = Math.atan2(yh, xh)*R2D, mlat = Math.atan2(zh, Math.sqrt(xh*xh + yh*yh))*R2D;
+  // perturbations (Evection, Variation, Yearly equation)
+  var Ms = norm360(356.0470 + 0.9856002585*d);
+  var Lm = norm360(N + w + M);
+  var Ls = norm360(norm360(282.9404 + 4.70935e-5*d) + Ms);
+  var Dm = norm360(Lm - Ls), Fm = norm360(M + w);
+  lon += -1.274*Math.sin((M - 2*Dm)*D2R) + 0.658*Math.sin(2*Dm*D2R)
+       - 0.186*Math.sin(Ms*D2R) - 0.114*Math.sin(2*Fm*D2R);
+  mlat += -0.173*Math.sin((Fm - 2*Dm)*D2R);
+  var ecl = (23.4393 - 3.563e-7*d)*D2R, lonr = lon*D2R, latr = mlat*D2R;
+  var xe = Math.cos(lonr)*Math.cos(latr), ye = Math.sin(lonr)*Math.cos(latr), ze = Math.sin(latr);
+  var xeq = xe, yeq = ye*Math.cos(ecl) - ze*Math.sin(ecl), zeq = ye*Math.sin(ecl) + ze*Math.cos(ecl);
+  return {
+    ra: norm360(Math.atan2(yeq, xeq)*R2D)/15,
+    dec: Math.atan2(zeq, Math.sqrt(xeq*xeq + yeq*yeq))*R2D
+  };
+}
+function moonPhase(moon, sun){
+  var dRA = (moon.ra - sun.ra)*15*D2R;
+  var c = Math.sin(moon.dec*D2R)*Math.sin(sun.dec*D2R) +
+          Math.cos(moon.dec*D2R)*Math.cos(sun.dec*D2R)*Math.cos(dRA);
+  var elong = Math.acos(Math.max(-1, Math.min(1, c)))*R2D;
+  var frac = (1 - Math.cos(elong*D2R))/2;
+  var waxing = norm360((moon.ra - sun.ra)*15) < 180;
+  return {frac: frac, waxing: waxing};
+}
+function moonEmoji(ph){
+  var f = ph.frac, w = ph.waxing;
+  if(f < 0.035 || f > 0.965) return "🌑";
+  if(f < 0.22) return w ? "🌒" : "🌘";
+  if(f < 0.28) return w ? "🌓" : "🌗";
+  if(f < 0.47) return w ? "🌔" : "🌖";
+  if(f < 0.53) return "🌕";
+  if(f < 0.72) return w ? "🌔" : "🌖";
+  if(f < 0.78) return w ? "🌓" : "🌗";
+  return w ? "🌒" : "🌘";
+}
+var WINDS = ["N","NE","E","SE","S","SW","W","NW"];
+function wind(az){ return WINDS[Math.round(az/45) % 8]; }
+function fmtMag(m){ return (m > 0 ? "+" : "−") + Math.abs(m).toFixed(1); }
+
+function render(){
+  var now = new Date();
+  $("dateline").textContent = "Cairo, Egypt · " +
+    now.toLocaleDateString("en-GB", {weekday:"short", day:"numeric", month:"short"}) + " · " +
+    now.toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
+
+  var sun = sunRaDec(now), sunP = altaz(sun.ra, sun.dec, now);
+  var night = sunP.alt < -6;
+
+  var moon = moonRaDec(now), moonP = altaz(moon.ra, moon.dec, now);
+  var ph = moonPhase(moon, sun);
+  $("moonEmoji").textContent = moonEmoji(ph);
+  $("moonSub").textContent = Math.round(ph.frac*100) + "%" +
+    (moonP.alt > 0 ? " · " + wind(moonP.az) + " " + Math.round(moonP.alt) + "° up" : " · below horizon");
+
+  var up = [];
+  STARS.forEach(function(s){
+    var p = altaz(s[1], s[2], now);
+    if(p.alt > 8) up.push({name: s[0], mag: s[3], alt: p.alt, az: p.az});
+  });
+  up.sort(function(a,b){ return a.mag - b.mag; });
+
+  var list = $("list"); list.innerHTML = "";
+  if(night){
+    $("skyState").textContent = "🌙 Night";
+    $("skySub").textContent = up.length + " bright objects up";
+    $("listHead").textContent = "Up right now";
+    up.slice(0, 6).forEach(function(o){
+      var r = document.createElement("div");
+      r.className = "row";
+      r.innerHTML = '<div><span class="nm">' + o.name + '</span><span class="mg">★ ' + fmtMag(o.mag) + '</span></div>' +
+                    '<div class="pos"><b>' + wind(o.az) + '</b> · ' + Math.round(o.alt) + '° up</div>';
+      list.appendChild(r);
+    });
+    if(up.length === 0){
+      var e = document.createElement("div");
+      e.className = "empty"; e.textContent = "No bright stars above 8° right now — check back later.";
+      list.appendChild(e);
+    }
+  }else{
+    $("skyState").textContent = "☀️ Day";
+    $("skySub").textContent = "stars return after sunset";
+    $("listHead").textContent = "Right now";
+    var e2 = document.createElement("div");
+    e2.className = "empty";
+    e2.textContent = moonP.alt > 0
+      ? "The Sun is up — but the Moon is visible: look " + wind(moonP.az) + ", " + Math.round(moonP.alt) + "° up."
+      : "The Sun is up. Come back after sunset to see the stars.";
+    list.appendChild(e2);
+  }
+}
+render();
+setInterval(render, 60000);
+})();
+</script>
+</body>
+</html>
