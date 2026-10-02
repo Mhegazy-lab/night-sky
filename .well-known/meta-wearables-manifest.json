@@ -1,0 +1,1 @@
+{"version":1,"name":"Night Sky","description":"What is in the sky right now over Cairo — bright stars and the Moon, with live directions.","appearance":{"theme_color":"#8B5CF6","icon":{"src":"../icon-mono.png","type":"monochrome"},"icon_background":{"colors":["#8B5CF6","#5B21B6","#1E1B4B","#050310"],"stops":[0.0,0.33,0.66,1.0],"inner_glow_color":"#DDD6FE"}}}
